@@ -1,4 +1,4 @@
-# Lint as: python2, python3
+# Lint as: python3
 # Copyright 2019 Google LLC. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,17 +17,13 @@
 This executor along with other custom component related code will only serve as
 an example and will not be supported by TFX team.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import os
 import signal
 from typing import Any, Dict, List, NamedTuple, Text
 
 import absl
-from slackclient import SlackClient
-
+from slack import SlackClient
 from tfx import types
 from tfx.components.base import base_executor
 from tfx.components.util import model_utils
