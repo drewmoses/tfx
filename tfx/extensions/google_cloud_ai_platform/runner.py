@@ -37,9 +37,14 @@ _POLLING_INTERVAL_IN_SECONDS = 30
 
 _CONNECTION_ERROR_RETRY_LIMIT = 5
 
+# Default contaier image being used for CAIP training jobs.
 # TODO(b/139934802) Ensure mirroring of released TFX containers in Docker Hub
 # and gcr.io/tfx-oss-public/ registries.
 _TFX_IMAGE = 'gcr.io/tfx-oss-public/tfx:{}'.format(version.__version__)
+
+# Entrypoint of cloud AI platform training. This is to remove dependency to
+# container's default entrypoint.
+_CONTAINER_COMMAND = ['tfx-run-executor']
 
 _TF_COMPATIBILITY_OVERRIDE = {
     # Generally, runtimeVersion should be same as <major>.<minor> of currently
@@ -230,6 +235,10 @@ def start_aip_training(input_dict: Dict[Text, List[types.Artifact]],
     training_inputs['masterConfig'] = {
         'imageUri': _TFX_IMAGE,
     }
+
+  # Always use our own entrypoint instead of relying on container default.
+  if not training_inputs['masterConfig'].get('containerCommand'):
+    training_inputs['masterConfig']['containerCommand'] = _CONTAINER_COMMAND
 
   training_inputs['args'] = job_args
 

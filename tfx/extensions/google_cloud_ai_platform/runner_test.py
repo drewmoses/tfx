@@ -101,6 +101,7 @@ class RunnerTest(tf.test.TestCase):
         {
             'masterConfig': {
                 'imageUri': default_image,
+                'containerCommand': [runner._CONTAINER_COMMAND],
             },
             'args': [
                 '--executor_class_path', class_path, '--inputs', '{}',
@@ -119,7 +120,9 @@ class RunnerTest(tf.test.TestCase):
 
     class_path = 'foo.bar.class'
 
-    self._training_inputs['masterConfig'] = {'imageUri': 'my-custom-image'}
+    self._training_inputs['masterConfig'] = {
+        'imageUri': 'my-custom-image',
+    }
     self._exec_properties['custom_config'][executor.JOB_ID_KEY] = self._job_id
     runner.start_aip_training(self._inputs, self._outputs,
                               self._serialize_custom_config_under_test(),
@@ -134,6 +137,7 @@ class RunnerTest(tf.test.TestCase):
         {
             'masterConfig': {
                 'imageUri': 'my-custom-image',
+                'containerCommand': [runner._CONTAINER_COMMAND],
             },
             'args': [
                 '--executor_class_path', class_path, '--inputs', '{}',

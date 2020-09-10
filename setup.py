@@ -158,8 +158,8 @@ setup(
     setup_requires=[
         'pytest-runner',
         'poetry==1.0.9',  # Required for ResolveDeps command.
-                          # Poetry API is not officially documented and subject
-                          # to change in the future. Thus fix the version.
+        # Poetry API is not officially documented and subject
+        # to change in the future. Thus fix the version.
         'clikit>=0.4.3,<0.5',  # Required for ResolveDeps command.
     ],
     cmdclass={
@@ -186,4 +186,6 @@ setup(
     entry_points="""
         [console_scripts]
         tfx=tfx.tools.cli.cli_main:cli_group
+        tfx-run-executor=tfx.scripts.run_executor:main
+        tfx-kfp-container-entrypoint=tfx.orchestration.kubeflow.container_entrypoint:main
     """)
