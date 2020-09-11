@@ -1,4 +1,4 @@
-# Lint as: python2, python3
+# Lint as: python3
 # Copyright 2019 Google LLC. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -17,17 +17,15 @@
 This executor along with other custom component related code will only serve as
 an example and will not be supported by TFX team.
 """
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
 
 import os
 import signal
-from typing import Any, Dict, List, NamedTuple, Text
+import textwrap
+from typing import Any, Dict, List, Text
 
 import absl
-from slackclient import SlackClient
-
+import attr
+import slack
 from tfx import types
 from tfx.components.base import base_executor
 from tfx.components.util import model_utils
@@ -40,15 +38,6 @@ _APPROVE_TEXT = ['lgtm', 'approve']
 # Case-insensitive text messages that are accepted as signal for rejecting a
 # model.
 _DECLINE_TEXT = ['decline', 'reject']
-# Template for notifying model review
-_NOTIFY_MODEL_REVIEW_TEMPLATE = """
-Please review the model in the following URI: {}"""
-# Template for notifying valid model review reply
-_NOTIFY_CORRECT_REPLY_TEMPLATE = """
-Unrecognized text: "{{}}", please use one of the following to approve:
-{}
-or one of the following to reject:
-{}""".format(_APPROVE_TEXT, _DECLINE_TEXT)
 
 
 class Timeout(object):
@@ -70,21 +59,13 @@ class Timeout(object):
     signal.alarm(0)
 
 
-# NamedTuple for slack response.
-_SlackResponse = NamedTuple(
-    '_SlackResponse',
-    [
-        # Whether the model is approved.
-        ('approved', bool),
-        # The user that made the decision.
-        ('user_id', Text),
-        # The decision message.
-        ('message', Text),
-        # The slack channel that the decision is made on.
-        ('slack_channel_id', Text),
-        # The slack thread that the decision is made on.
-        ('thread_ts', Text)
-    ])
+@attr.s(auto_attribs=True, kw_only=True, frozen=True)
+class _SlackResponse:
+  approved: bool
+  user_id: Text
+  message: Text
+  slack_channel_id: Text
+  thread_ts: Text
 
 
 class Executor(base_executor.BaseExecutor):
@@ -132,44 +113,62 @@ class Executor(base_executor.BaseExecutor):
         When connection to slack server cannot be established.
 
     """
-    sc = SlackClient(slack_token)
-    msg = _NOTIFY_MODEL_REVIEW_TEMPLATE.format(model_uri)
-    ts = 0
-    if not sc.rtm_connect():
-      msg = 'Cannot connect to slack server with given token'
-      absl.logging.error(msg)
-      raise ConnectionError(msg)  # pylint: disable=undefined-variable
+    web_client = slack.WebClient(slack_token)
+    resp = web_client.chat_postMessage({
+        'channel': slack_channel_id,
+        'text': ('Please review the model in the following URI: {}'
+                 .format(model_uri)),
+    })
+    thread_ts = resp['ts']
+    rtm_client = slack.RTMClient(slack_token)
+    result = None
 
-    sc.rtm_send_message(slack_channel_id, message=msg)
+    # pylint: disable=unused-variable
+    @slack.RTMClient.run_on(event='message')
+    def wait_for_user_response_once(data, web_client, **unused_payload):
+      nonlocal result
+      if (data['channel'] != slack_channel_id or
+          data['ts'] != thread_ts):
+        return
 
-    while sc.server.connected:
-      payload_list = sc.rtm_read()
-      if not payload_list:
-        continue
+      user_response = data['text'].lower()
+      if user_response in _APPROVE_TEXT:
+        absl.logging.info('User %s approved the model %s',
+                          data['user'], model_uri)
+        rtm_client.stop()
+        result = _SlackResponse(
+            approved=True,
+            user_id=data['user'],
+            message=data['text'],
+            slack_channel_id=slack_channel_id,
+            thread_ts=str(thread_ts))
+      elif user_response in _DECLINE_TEXT:
+        absl.logging.info('User %s declined the model %s',
+                          data['user'], model_uri)
+        rtm_client.stop()
+        result = _SlackResponse(
+            approved=False,
+            user_id=data['user'],
+            message=data['text'],
+            slack_channel_id=slack_channel_id,
+            thread_ts=str(thread_ts))
+      else:
+        absl.logging.info('Unrecognized response %s', user_response)
+        web_client.chat_postMessage({
+            'channel': slack_channel_id,
+            'thread_ts': thread_ts,
+            'text': textwrap.dedent(f'''
+                Unrecognized response: {user_response}.
+                Please use one of the following to approve:
+                  `{_APPROVE_TEXT}`
+                or one of the following to reject:
+                  `{_DECLINE_TEXT}`
+            ''')
+        })
 
-      for payload in payload_list:
-        if payload.get('ok') and payload.get('reply_to') == 0 and not ts:
-          ts = payload['ts']
-          continue
-        if not self._is_valid_message(payload, slack_channel_id, ts):
-          continue
-        if payload.get('text').lower() in _APPROVE_TEXT:
-          absl.logging.info('User %s approves the model located at %s',
-                            payload.get('user'), model_uri)
-          return _SlackResponse(True, payload.get('user'), payload.get('text'),
-                                slack_channel_id, str(ts))
-        elif payload.get('text').lower() in _DECLINE_TEXT:
-          absl.logging.info('User %s declines the model located at %s',
-                            payload.get('user'), model_uri)
-          return _SlackResponse(False, payload.get('user'), payload.get('text'),
-                                slack_channel_id, str(ts))
-        else:
-          unrecognized_text = payload.get('text')
-          absl.logging.info('Unrecognized response: %s', unrecognized_text)
-          sc.rtm_send_message(
-              slack_channel_id,
-              message=_NOTIFY_CORRECT_REPLY_TEMPLATE.format(unrecognized_text),
-              thread=ts)
+    rtm_client.start()
+
+    return result
 
   def Do(self, input_dict: Dict[Text, List[types.Artifact]],
          output_dict: Dict[Text, List[types.Artifact]],

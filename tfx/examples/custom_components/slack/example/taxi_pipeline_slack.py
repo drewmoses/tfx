@@ -1,4 +1,4 @@
-# Lint as: python2, python3
+# Lint as: python3
 # Copyright 2019 Google LLC. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -21,14 +21,8 @@ This example along with the custom `SlackComponent` will only serve as an
 example and will not be supported by TFX team.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
 import datetime
 import os
-
-from slack_component.component import SlackComponent
 
 from tfx.components import CsvExampleGen
 from tfx.components import Evaluator
@@ -39,6 +33,7 @@ from tfx.components import SchemaGen
 from tfx.components import StatisticsGen
 from tfx.components import Trainer
 from tfx.components import Transform
+from tfx.examples.custom_components.slack.slack_component.component import SlackComponent
 from tfx.orchestration import metadata
 from tfx.orchestration import pipeline
 from tfx.orchestration.beam.beam_runner import BeamRunner
