@@ -1,4 +1,4 @@
-# Lint as: python2, python3
+# Lint as: python3
 # Copyright 2020 Google LLC. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -18,18 +18,46 @@ NOTE: For your rewriter to be instanitated, please include it as an import and
 a constant for ease of invoking the new rewriter.
 """
 
-from __future__ import absolute_import
-from __future__ import division
-from __future__ import print_function
-
+import importlib
 from typing import Text
 
-from tfx.components.trainer.rewriting import rewriter
-from tfx.components.trainer.rewriting import tfjs_rewriter  # pylint: disable=unused-import
-from tfx.components.trainer.rewriting import tflite_rewriter  # pylint: disable=unused-import
+from absl import logging
 
-TFLITE_REWRITER = "TFLiteRewriter"
-TFJS_REWRITER = "TFJSRewriter"
+from tfx.components.trainer.rewriting import rewriter
+
+TFLITE_REWRITER = 'TFLiteRewriter'
+TFJS_REWRITER = 'TFJSRewriter'
+
+
+class _RewriterFactory:
+  """Factory class for rewriters."""
+  _rewriters_loaded = False
+
+  @classmethod
+  def _load_rewriters(cls):
+    """Load all rewriters."""
+    if cls._rewriters_loaded:
+      return
+    # By importing subclasses of BaseRewriter, we can access them later via
+    # BaseRewriter.__subclasses__().
+    importlib.import_module('tfx.components.trainer.rewriting.tflite_rewriter')
+    try:
+      importlib.import_module('tensorflowjs')
+    except ImportError:
+      logging.info('tensorflowjs is not installed. Skipping tfjs_rewriter. '
+                   'Please install [tfjs] extra dependencies to use '
+                   'tfjs_rewriter.')
+    else:
+      importlib.import_module('tfx.components.trainer.rewriting.tfjs_rewriter')
+    cls._rewriters_loaded = True
+
+  @classmethod
+  def get_rewriter_cls(cls, rewriter_type: Text):
+    cls._load_rewriters()
+    for c in rewriter.BaseRewriter.__subclasses__():
+      if (c.__name__.lower()) == rewriter_type.lower():
+        return c
+    raise ValueError('Failed to find rewriter: {}'.format(rewriter_type))
 
 
 def create_rewriter(rewriter_type: Text, *args,
@@ -46,7 +74,4 @@ def create_rewriter(rewriter_type: Text, *args,
   Raises:
     ValueError: If unable to instantiate the rewriter.
   """
-  for c in rewriter.BaseRewriter.__subclasses__():
-    if (c.__name__.lower()) == rewriter_type.lower():
-      return c(*args, **kwargs)
-  raise ValueError("Failed to find rewriter: {}".format(rewriter_type))
+  return _RewriterFactory.get_rewriter_cls(rewriter_type)(*args, **kwargs)
